@@ -1,0 +1,223 @@
+---
+title: "project1"
+author: "Szymon Berdzik"
+date: "30/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(sp)
+library(rgdal)
+library(dbscan)
+setwd('/home/szymon/Documents/nauka_agh/semestr5/adp/projekt1')
+getwd()
+```
+
+Zamiana współrzędnych wgs na ETRS 1989 Poland CS2000 Zone 7 z pliku zestaw1.
+
+```{r}
+
+df <- read.csv("zestaw1.csv")
+cords.WGS = SpatialPoints(cbind(df$Long,df$Lat), proj4string=CRS("+proj=longlat"))
+cords.UTM = spTransform(cords.WGS, CRS("+init=epsg:2178"))
+df <- as.data.frame(cords.UTM)
+names(df) <- c('Long', 'Lat')
+head(df)
+```
+
+
+Wczytanie pliku osiedla.shp 
+
+```{r}
+osiedla <- readOGR(dsn='osiedla.shp', p4s="+init=epsg:2178")
+osiedla$WSP_X <- coordinates(osiedla)[,1]
+osiedla$WSP_Y <- coordinates(osiedla)[,2]
+osiedla_df <- as.data.frame(osiedla)
+head(osiedla_df)
+```
+```{r}
+plot_krakow <- function(color, title){
+    plot(osiedla, main=title)
+    plot(cords.UTM, col=color, add=TRUE,  pch=16, cex=0.7 )
+}
+```
+Mapa krakowa
+```{r}
+plot_krakow(color='red', title="Mapa miasta Kraków wraz z zarejestrowanymi przestępstwami.")
+
+```
+
+Algorytm DBSCAN
+
+Algorytm DBSAN  jest to algorytm klasteryzacji przestrzennej w obecności szumu opartej na gęstości zjawisk. Grupuje razem punkty z wieloma pobliskimi sąsiadami, oznaczając jako punkty odstające, te które leżą samotnie w regionach o niskiej gęstości(którego najbliżsi sąsiedzi są zbyt daleko).Algorytm wymaga od użytkownika wprowadzenie dwóch parametrów (epsilon) oraz MinPts.
+
+Wady:
+- Nie daje możliwości definiowania a priori liczby segmentów - liczba segmentów zależy od liczby obserwacji i dobranych parametrów.
+- Dobór odpowiednich parametrów bywa dosyć problematyczny - ich optymalizacja bywa długa i uciążliwa, gdyż nie ma jednej sprawdzonej metody.
+
+Zalety:
+- Odporny na wpływ obserwacji odstających
+- Znakomicie radzi sobie z grupami o niewypukłym kształcie
+- Daje dobre rezultaty
+
+
+```{r}
+dbscan_res1<-dbscan(df, eps=300, minPts=5)
+plot_krakow(color=dbscan_res1$cluster, title="dbscan eps=300 minPts=5")
+```
+
+
+Można zauwazyć, że przy takich parametrach ukształtował nam sie jeden głowny klaster na terenie dzielnicy Starego Miasta/krowodrzy/grzegrzółki (zielony) oraz wiele małych klasterów. Uważam, że parametr minPts jest zbyt mały.
+
+```{r}
+
+
+dbscan_res1<-dbscan(df, eps=800, minPts=40)
+plot_krakow(color=dbscan_res1$cluster, title="dbscan eps=800 minPts=40")
+```
+
+
+Zostaly utworzone 3 klastry:
+czerwony - Stare Miasto, Krowodorza, Grzegrzółki
+zielony - prądnik czerwony
+czarny - Bieńczyce/Mistrzejowice
+
+Wyniki wydają się realne, obserwując mape można zauważyć, że w tych okolicach wykroczen jest najwiecej. Przetestujmy jeszcze opcje ze zmiejszeniem argumentu minPts.
+
+```{r}
+dbscan_res1<-dbscan(df, eps=720, minPts=20)
+plot_krakow(color=dbscan_res1$cluster, title="dbscan eps=720 minPts=20")
+```
+
+
+Przy takich parametrach powstały 4 klastry
+czerwony - Stare Miasto, Krowodorza, Grzegrzółki
+zielony - Prądnik biały południe
+niebieski - prądnik czerwony
+błekitny - granica Grzegrzólki/Czyżyny
+czarny -  Mistrzejowice i Bieńczyce
+
+```{r}
+dbscan_res1<-dbscan(df, eps=730, minPts=40)
+plot_krakow(color=dbscan_res1$cluster, title="dbscan eps=730 minPts=40")
+```
+
+
+W tym przypadku zostały utworzone dwa klastry:
+czarny - Bienczyce i Mistrzejowice
+czerwony - Stare MIasto, Krowodorza, Grzegrzółki
+
+Algorytm HDBSCAN
+
+
+Algorytm HDBSCAN jest to algorytm hierarchicznej klasteryzacji przestrzennej w obecności szumu opartej na gęstości zjawisk, jest rozwinięciem algorytmu  DBSCAN.
+Algorytm ten identyfikuje tzw. rdzenie klastrów jako te punkty, w sąsiedztwie których zlokalizowana jest wystarczająca ilość punktów sąsiadujących (większa bądź równa przyjętej wartości granicznej). Do tak zdefiniowanych rdzeni klastrów dołączane są
+punkty pozostające w bliskiej odległości od któregokolwiek z punktów rdzenia
+(bliżej niż zadana wartość), które w sumie tworzą klaster. Punkty
+niezakwalifikowane dożadnego klastra są określane jako szum.
+
+
+Wady:
+- Nie daje możliwości definiowania a priori liczby segmentów - liczba segmentów zależy od liczby obserwacji i dobranych parametrów.
+
+
+Zalety:
+- Odporny na wpływ obserwacji odstających
+- Pozwala stworzyć klastry o różnym kształcie
+- Wystarczy podać tylko jeden parametr
+- Porządkuje punkty w hierarchie klastrów w klastrach - umozliwia identyfikacje klastrów o róznych rozmiarach
+
+```{r}
+hdbscan_res1<-hdbscan(df,minPts=4)
+plot_krakow(color=hdbscan_res1$cluster, title="hdbscan minPts=4")
+```
+
+
+ niskich wartosciach minPts < 7 tworzy nam się jeden wielki klaster.
+```{r}
+hdbscan_res1<-hdbscan(df,minPts=30)
+plot_krakow(color=hdbscan_res1$cluster, title="hdbscan minPts=30")
+```
+
+
+Zostaly utworzone 3 klastry:
+zielony - Stare Miasto, Krowodorza, Grzegrzółki
+czerwiby - prądnik czerwony
+czarny - Bieńczyce/Mistrzejowice
+
+Są to wyniki podobne do wyników z algorytmu DBSCAN przy parametrach eps=800, minPts=40.
+
+
+```{r}
+hdbscan_res1<-hdbscan(df,minPts=20)
+plot_krakow(color=hdbscan_res1$cluster, title="hdbscan minPts=20")
+```
+
+
+Otrzymalismy zbyt dużo klastrów. Słabo odnosi się to do naszych danych, aczkolwiek okolicje o zwiekszonej intensywnosci wykroczen jest dobra. Pierwszy Stare Miasto/Krowodorza/Grzegrzółki/Kazimierz oraz drugi Mistrzejowice/Bienczyce
+
+
+```{r}
+hdbscan_res1<-hdbscan(df,minPts=50)
+plot_krakow(color=hdbscan_res1$cluster, title="hdbscan minPts=50")
+```
+
+
+Zostały utworzone dwa klastry. Są to okolice o najwiekszej ilości odnotowanych wykroczeń na terenie Krakowa.
+
+czarny - Bienczyce i Mistrzejowice
+czerwony - Stare MIasto, Krowodorza, Grzegrzółki
+
+
+ALGORYTM OPTICS
+
+Algorytm OPTICS jest to algorytm wyszukiwania klastrów opartych na gęstości w danych przestrzennych. Jego podstawowa idea jest podobna do DBSCAN, ale rozwiazuje jedną z głównych słabości tegi algorytmu: problem wykrywania znaczących klastrów w danych o różnej gęstości.W tym celu punkty bazy danych są (liniowo) uporządkowane w taki sposób, że najbliższe przestrzennie punkty stają się sąsiadami w porządkowaniu. Dodatkowo dla każdego punktu reprezentującego gęstość, która musi być zaakceptowana dla klastra, przechowywana jest specjalna odległość, aby oba punkty należały do tego samego klastra. Jest to reprezentowane jako dendrogram. 
+
+
+
+
+```{r}
+optics_res1<-extractXi(optics(df, eps=400, minPts=10), xi=0.01)
+plot_krakow(color=optics_res1$cluster, title="optics eps=400 minPts=10")
+
+```
+
+Przy parametrach eps=400 i minPts=10 możemy zaobserwowac podział na bardzo dużo małych klastrów w okolicach zmożonej intensywnosci zarejestrowanych wykroczeń.
+
+```{r}
+optics_res1<-extractXi(optics(df, eps=700, minPts=40), xi=0.01)
+plot_krakow(color=optics_res1$cluster, title="optics eps=700 minPts=40")
+
+```
+
+
+Otrzymalismy 4 klastry 
+Zielony - Mistrzejowce
+Czarny  - Bienczyce
+
+Oraz dzielnice Stare Miasto/Krowodrza/Grzegrzólki rodzieloną na kilka klastrów.
+(Wyników nie za bardzo rozumiem)
+
+```{r}
+optics_res1<-extractXi(optics(df, eps=1000, minPts=60), xi=0.01)
+plot_krakow(color=optics_res1$cluster, title="optics eps=1000 minPts=60")
+
+```
+
+
+Powstały 3 duze klastry
+czerwony - Bieńczyce
+czarny - Mistrzejowice
+Zielony - Stare MIasto bez Rynku, Krowodrza, Grzegrzółki 
+Mozna zauwazyć ze Rynek Głowny oraz prawdopodobnie okolice Kazimierza zostały rodzielone
+na kilka mniejszych klastrów, nie zostały dołączone do klastra koloru zielonego.
+
+
+
+
+Podsumowując wyniki z zastosowania algorytmow DBSCAN i HDBSCAN były w miare podobne i dążyły do utworzenia 2/3 głównych klastrów, natomiast wyniki działania algorytmu OPTICS okazały się zupełnie inne, wystepuje to podział na wiekszą ilość klastrów(bardziej szczegółowy).
